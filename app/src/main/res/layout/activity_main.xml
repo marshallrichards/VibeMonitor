@@ -23,17 +23,32 @@
         android:textSize="18sp" />
 
     <EditText
-        android:id="@+id/webhook_url_edittext"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Enter Webhook URL" />
-
-    <EditText
         android:id="@+id/threshold_edittext"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Drying Threshold (e.g., 10.25)"
         android:inputType="numberDecimal" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Confirmation Time (s):"/>
+
+        <EditText
+            android:id="@+id/duration_edittext"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:maxLines="1"
+            android:gravity="end"
+            android:hint="30"/>
+    </LinearLayout>
 
     <Button
         android:id="@+id/set_threshold_from_rms_button"
@@ -58,5 +73,25 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Toggle Dryer State (Idle/Drying)" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Webhook URL(s)"
+        android:layout_marginTop="24dp"
+        style="@style/TextAppearance.AppCompat.Medium" />
+
+    <LinearLayout
+        android:id="@+id/webhook_urls_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical" />
+
+    <Button
+        android:id="@+id/add_webhook_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:text="+ Add URL" />
 
 </LinearLayout>
