@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var accelerometer: Sensor? = null
     private lateinit var rmsTextView: TextView
     private lateinit var statusTextView: TextView
+    private lateinit var monitorNameEditText: EditText
     private lateinit var thresholdEditText: EditText
     private lateinit var durationEditText: EditText
     private lateinit var setThresholdFromRmsButton: Button
@@ -57,13 +58,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val gravity = floatArrayOf(0f, 0f, 0f)
     private val alpha: Float = 0.8f
 
+    private var monitorName: String = "dryer-1"
     private var dryingThreshold: Float = 0.1f // Default threshold, user can override. Lowered for filtered data.
     private var webhookUrls = mutableSetOf<String>()
     private var monitoringDurationSeconds = 30 // Default to 30 seconds
     private var isUserPaused = false
 
-    private enum class DryerState { IDLE, MONITORING_START, DRYING, MONITORING_STOP }
-    private var currentState = DryerState.IDLE
+    private enum class MonitorState { IDLE, MONITORING_START, DETECTED, MONITORING_STOP }
+    private var currentState = MonitorState.IDLE
     private val stateChangeHandler = Handler(Looper.getMainLooper())
     private var countdownSeconds = 0
 
@@ -78,8 +80,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     companion object {
         private const val PREFS_NAME = "VibeMonitorPrefs"
         private const val KEY_THRESHOLD = "threshold"
-        private const val KEY_WEBHOOK_URL = "webhook_urls" // Renamed for clarity
+        private const val KEY_WEBHOOK_URLS = "webhook_urls" // Corrected name
         private const val KEY_DURATION = "duration"
+        private const val KEY_NAME = "monitor_name"
         private const val TAG = "VibeMonitor"
     }
 
@@ -90,6 +93,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         rmsTextView = findViewById(R.id.rms_textview)
         statusTextView = findViewById(R.id.status_textview)
+        monitorNameEditText = findViewById(R.id.monitor_name_edittext)
         thresholdEditText = findViewById(R.id.threshold_edittext)
         durationEditText = findViewById(R.id.duration_edittext)
         setThresholdFromRmsButton = findViewById(R.id.set_threshold_from_rms_button)
@@ -102,11 +106,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         loadSettings()
 
+        monitorNameEditText.setText(monitorName)
         thresholdEditText.setText(dryingThreshold.toString())
         durationEditText.setText(monitoringDurationSeconds.toString())
 
         // --- Improved EditText Handling ---
-        thresholdEditText.setOnEditorActionListener { v, actionId, event ->
+        monitorNameEditText.setOnEditorActionListener { v, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
                 saveSettingsButton.performClick()
                 v.clearFocus() // Remove focus from EditText
@@ -117,7 +122,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 false // Not handled
             }
         }
-        durationEditText.setOnEditorActionListener { v, actionId, event ->
+        thresholdEditText.setOnEditorActionListener { v, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
                 saveSettingsButton.performClick()
                 v.clearFocus() // Remove focus from EditText
@@ -142,6 +147,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
             webhookUrls = newUrls
 
+            // Save Name
+            monitorName = monitorNameEditText.text.toString().ifBlank { "dryer-1" }
+
             // Save Threshold
             dryingThreshold = thresholdEditText.text.toString().toFloatOrNull() ?: dryingThreshold
             // Save Duration
@@ -149,7 +157,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             // Persist all settings
             with(sharedPreferences.edit()) {
-                putStringSet(KEY_WEBHOOK_URL, webhookUrls)
+                putStringSet(KEY_WEBHOOK_URLS, webhookUrls)
+                putString(KEY_NAME, monitorName)
                 putFloat(KEY_THRESHOLD, dryingThreshold)
                 putInt(KEY_DURATION, monitoringDurationSeconds)
                 apply()
@@ -181,16 +190,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         manualStateToggleButton.setOnClickListener {
             cancelMonitoring() // Stop any pending state changes
-            if (currentState == DryerState.DRYING || currentState == DryerState.MONITORING_STOP) {
-                currentState = DryerState.IDLE
+            if (currentState == MonitorState.DETECTED || currentState == MonitorState.MONITORING_STOP) {
+                currentState = MonitorState.IDLE
                 Log.d(TAG, "State manually changed to IDLE. Sending webhook.")
-                sendWebhook(isDrying = false)
+                sendWebhook(isDetected = false)
                 updateStatus("Status: Manually set to Idle.")
             } else { // IDLE or MONITORING_START
-                currentState = DryerState.DRYING
-                Log.d(TAG, "State manually changed to DRYING. Sending webhook.")
-                sendWebhook(isDrying = true)
-                updateStatus("Status: Manually set to Drying.")
+                currentState = MonitorState.DETECTED
+                Log.d(TAG, "State manually changed to DETECTED. Sending webhook.")
+                sendWebhook(isDetected = true)
+                updateStatus("Status: Manually set to Detected.")
             }
         }
 
@@ -273,8 +282,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun loadSettings() {
+        monitorName = sharedPreferences.getString(KEY_NAME, "dryer-1") ?: "dryer-1"
         dryingThreshold = sharedPreferences.getFloat(KEY_THRESHOLD, 0.1f)
-        webhookUrls = sharedPreferences.getStringSet(KEY_WEBHOOK_URL, setOf())?.toMutableSet() ?: mutableSetOf()
+        webhookUrls = sharedPreferences.getStringSet(KEY_WEBHOOK_URLS, setOf())?.toMutableSet() ?: mutableSetOf()
         monitoringDurationSeconds = sharedPreferences.getInt(KEY_DURATION, 30)
 
         // Populate the UI
@@ -303,34 +313,34 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun handleStateTransitions(rms: Float) {
         when (currentState) {
-            DryerState.IDLE -> {
+            MonitorState.IDLE -> {
                 updateStatus("Status: Idle. Waiting for vibration above threshold (%.3f)".format(dryingThreshold))
                 if (rms > dryingThreshold) {
-                    currentState = DryerState.MONITORING_START
+                    currentState = MonitorState.MONITORING_START
                     startMonitoringStart()
                 }
             }
-            DryerState.MONITORING_START -> {
+            MonitorState.MONITORING_START -> {
                 // Status is handled by countdown runnable
                 if (rms < dryingThreshold) {
                     // Vibration dropped, go back to idle
-                    currentState = DryerState.IDLE
+                    currentState = MonitorState.IDLE
                     cancelMonitoring()
                 }
                 // else: wait for timer to fire
             }
-            DryerState.DRYING -> {
-                updateStatus("Status: Drying in progress.")
+            MonitorState.DETECTED -> {
+                updateStatus("Status: Detected.")
                 if (rms < dryingThreshold) {
-                    currentState = DryerState.MONITORING_STOP
+                    currentState = MonitorState.MONITORING_STOP
                     startMonitoringStop()
                 }
             }
-            DryerState.MONITORING_STOP -> {
+            MonitorState.MONITORING_STOP -> {
                 // Status is handled by countdown runnable
                 if (rms > dryingThreshold) {
                     // Vibration picked up again, go back to drying
-                    currentState = DryerState.DRYING
+                    currentState = MonitorState.DETECTED
                     cancelMonitoring()
                 }
                 // else: wait for timer to fire
@@ -370,8 +380,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         override fun run() {
             if (countdownSeconds > 0) {
                 val statusMessage = when (currentState) {
-                    DryerState.MONITORING_START -> "Status: Vibration detected. Confirming start in $countdownSeconds s..."
-                    DryerState.MONITORING_STOP -> "Status: Low vibration. Confirming stop in $countdownSeconds s..."
+                    MonitorState.MONITORING_START -> "Status: Vibration detected. Confirming start in $countdownSeconds s..."
+                    MonitorState.MONITORING_STOP -> "Status: Low vibration. Confirming stop in $countdownSeconds s..."
                     else -> "" // Should not happen
                 }
                 if (statusMessage.isNotEmpty()) {
@@ -384,22 +394,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private val monitoringStartRunnable = Runnable {
-        if (currentState == DryerState.MONITORING_START) {
-            currentState = DryerState.DRYING
-            Log.d(TAG, "State changed to DRYING. Sending webhook.")
-            sendWebhook(isDrying = true)
+        if (currentState == MonitorState.MONITORING_START) {
+            currentState = MonitorState.DETECTED
+            Log.d(TAG, "State changed to DETECTED. Sending webhook.")
+            sendWebhook(isDetected = true)
         }
     }
 
     private val monitoringStopRunnable = Runnable {
-        if (currentState == DryerState.MONITORING_STOP) {
-            currentState = DryerState.IDLE
+        if (currentState == MonitorState.MONITORING_STOP) {
+            currentState = MonitorState.IDLE
             Log.d(TAG, "State changed to IDLE. Sending webhook.")
-            sendWebhook(isDrying = false)
+            sendWebhook(isDetected = false)
         }
     }
 
-    private fun sendWebhook(isDrying: Boolean) {
+    private fun sendWebhook(isDetected: Boolean) {
         if (webhookUrls.isEmpty()) {
             Log.w(TAG, "No Webhook URLs are set. Cannot send data.")
             runOnUiThread {
@@ -422,8 +432,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     val timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).format(Date())
 
                     val jsonObject = JSONObject()
+                    jsonObject.put("name", monitorName)
                     jsonObject.put("timestamp", timestamp)
-                    jsonObject.put("isDrying", isDrying)
+                    jsonObject.put("isDetected", isDetected)
                     val jsonPayload = jsonObject.toString()
 
                     val writer = OutputStreamWriter(connection.outputStream, "UTF-8")

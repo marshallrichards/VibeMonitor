@@ -23,6 +23,14 @@
         android:textSize="18sp" />
 
     <EditText
+        android:id="@+id/monitor_name_edittext"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Monitor Name (e.g., dryer-1)"
+        android:inputType="text"
+        android:maxLines="1" />
+
+    <EditText
         android:id="@+id/threshold_edittext"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
