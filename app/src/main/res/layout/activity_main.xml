@@ -28,22 +28,35 @@
         android:layout_height="wrap_content"
         android:hint="Enter Webhook URL" />
 
-    <Button
-        android:id="@+id/save_url_button"
-        android:layout_width="wrap_content"
+    <EditText
+        android:id="@+id/threshold_edittext"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Save URL" />
+        android:hint="Drying Threshold (e.g., 10.25)"
+        android:inputType="numberDecimal" />
 
     <Button
-        android:id="@+id/set_baseline_button"
+        android:id="@+id/set_threshold_from_rms_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Set Baseline (Dryer Off)" />
+        android:text="Use Current RMS for Threshold" />
 
     <Button
-        android:id="@+id/set_threshold_button"
+        android:id="@+id/save_settings_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Set Threshold (Dryer On)" />
+        android:text="Save Settings" />
+
+    <Button
+        android:id="@+id/pause_resume_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Pause Monitoring" />
+
+    <Button
+        android:id="@+id/manual_state_toggle_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Toggle Dryer State (Idle/Drying)" />
 
 </LinearLayout>

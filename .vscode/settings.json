@@ -1,0 +1,19 @@
+{
+  // Stop the file watcher from even looking at Gradle’s output.
+  "files.watcherExclude": {
+    "**/build/**": true,
+    "**/.gradle/**": true
+  },
+
+  // Keep them out of Quick Open, search, etc.
+  "files.exclude": {
+    "**/build/**": true,
+    "**/.gradle/**": true
+  },
+
+  // Java/Kotlin language servers: don’t treat those jars as libraries.
+  "java.project.referencedLibraries": [
+    "!**/build/**"
+  ],
+  "kotlin.languageServer.buildFileWatchMode": "off"   // if you use the Kotlin LS
+}
