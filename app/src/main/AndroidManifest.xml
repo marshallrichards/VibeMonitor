@@ -8,6 +8,8 @@
     <!-- WAKE_LOCK might be needed later for the service to run reliably when screen is off -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:usesCleartextTraffic="true"
@@ -20,6 +22,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.VibeMonitor"
         tools:targetApi="31">
+        <service
+            android:name=".VibrationMonitorService"
+            android:foregroundServiceType="dataSync"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
