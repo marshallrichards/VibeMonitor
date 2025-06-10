@@ -10,9 +10,11 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.*
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -57,14 +59,21 @@ class VibrationMonitorService : Service(), SensorEventListener {
     // Flows for UI updates
     private val _statusFlow = MutableStateFlow("Service not running.")
     val statusFlow = _statusFlow.asStateFlow()
+    val currentStatus: String get() = _statusFlow.value
 
     private val _rmsFlow = MutableStateFlow(0.0f)
     val rmsFlow = _rmsFlow.asStateFlow()
+    val currentRms: Float get() = _rmsFlow.value
 
     private val _isPausedFlow = MutableStateFlow(false)
     val isPausedFlow = _isPausedFlow.asStateFlow()
+    val isCurrentlyPaused: Boolean get() = _isPausedFlow.value
+
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
 
     companion object {
+        var isRunning = false
         private const val PREFS_NAME = "VibeMonitorPrefs"
         private const val KEY_THRESHOLD = "threshold"
         private const val KEY_WEBHOOK_URLS = "webhook_urls"
@@ -79,6 +88,7 @@ class VibrationMonitorService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -96,6 +106,8 @@ class VibrationMonitorService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
+        serviceJob.cancel()
         unregisterSensorListener()
         cancelMonitoring()
         Log.d(TAG, "Service destroyed.")
@@ -138,6 +150,17 @@ class VibrationMonitorService : Service(), SensorEventListener {
             sendWebhook(isDetected = true)
             updateStatus("Status: Manually set to Detected.")
         }
+    }
+
+    fun sendTestWebhook() {
+        val testName = "test-webhook"
+        val testPayload = JSONObject().apply {
+            put("name", testName)
+            put("timestamp", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).format(Date()))
+            put("isDetected", true)
+        }.toString()
+
+        sendWebhookPayload(testPayload, isTest = true)
     }
 
     // --- Sensor and State Logic ---
@@ -221,10 +244,20 @@ class VibrationMonitorService : Service(), SensorEventListener {
 
     private fun startMonitoringCountdown(isStarting: Boolean) {
         countdownJob?.cancel()
-        countdownJob = GlobalScope.launch(Dispatchers.Default) {
+        countdownJob = serviceScope.launch(Dispatchers.Default) {
             try {
                 // Countdown loop
                 for (i in monitoringDurationSeconds downTo 1) {
+                    val currentRms = _rmsFlow.value // Get the latest RMS value
+                    if (isStarting && currentRms < dryingThreshold) {
+                        Log.d(TAG, "Vibration dropped during start confirmation. Cancelling.")
+                        throw kotlinx.coroutines.CancellationException("Vibration stopped during start confirmation")
+                    }
+                    if (!isStarting && currentRms > dryingThreshold) {
+                        Log.d(TAG, "Vibration resumed during stop confirmation. Cancelling.")
+                        throw kotlinx.coroutines.CancellationException("Vibration resumed during stop confirmation")
+                    }
+
                     val status = if (isStarting) {
                         "Status: Vibration detected. Confirming start in $i s..."
                     } else {
@@ -258,12 +291,33 @@ class VibrationMonitorService : Service(), SensorEventListener {
 
     // --- Webhook and Notification Logic ---
     private fun sendWebhook(isDetected: Boolean) {
+        val jsonObject = JSONObject().apply {
+            put("name", monitorName)
+            put("timestamp", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).format(Date()))
+            put("isDetected", isDetected)
+        }
+        sendWebhookPayload(jsonObject.toString())
+    }
+
+    private fun sendWebhookPayload(jsonPayload: String, isTest: Boolean = false) {
         if (webhookUrls.isEmpty()) {
             Log.w(TAG, "No Webhook URLs are set.")
+            // Optional: Show a toast if it's a test
+            if (isTest) {
+                Handler(Looper.getMainLooper()).post {
+                    // We need a context to show a toast, 'this' works for a service
+                    android.widget.Toast.makeText(this, "Cannot send test, no webhook URLs saved.", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
             return
         }
+        if (isTest) {
+            Handler(Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(this, "Sending test webhook...", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
         webhookUrls.forEach { urlString ->
-            GlobalScope.launch(Dispatchers.IO) {
+            serviceScope.launch(Dispatchers.IO) {
                 try {
                     val url = URL(urlString)
                     (url.openConnection() as? HttpURLConnection)?.run {
@@ -272,14 +326,6 @@ class VibrationMonitorService : Service(), SensorEventListener {
                         doOutput = true
                         connectTimeout = 5000
                         readTimeout = 5000
-
-                        val timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).format(Date())
-                        val jsonObject = JSONObject().apply {
-                            put("name", monitorName)
-                            put("timestamp", timestamp)
-                            put("isDetected", isDetected)
-                        }
-                        val jsonPayload = jsonObject.toString()
 
                         OutputStreamWriter(outputStream, "UTF-8").use {
                             it.write(jsonPayload)

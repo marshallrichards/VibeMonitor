@@ -82,6 +82,12 @@
         android:layout_height="wrap_content"
         android:text="Toggle Dryer State (Idle/Drying)" />
 
+    <Button
+        android:id="@+id/test_webhook_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Test Webhooks" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

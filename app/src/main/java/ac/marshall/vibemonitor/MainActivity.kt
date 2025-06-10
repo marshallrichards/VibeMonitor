@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var saveSettingsButton: Button
     private lateinit var pauseResumeButton: Button
     private lateinit var manualStateToggleButton: Button
+    private lateinit var testWebhookButton: Button
     private lateinit var webhookUrlsContainer: LinearLayout
     private lateinit var addWebhookButton: Button
 
@@ -52,6 +53,9 @@ class MainActivity : AppCompatActivity() {
             val binder = service as VibrationMonitorService.LocalBinder
             monitorService = binder.getService()
             isBound = true
+            // Immediately sync UI with current service state
+            updateUiWithCurrentServiceState()
+            // Start listening for future updates
             bindServiceData()
             updateUiForServiceState(true)
         }
@@ -70,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         setupUI()
         setupClickListeners()
         // Automatically start service if permissions are already granted and it's not running
-        if (!isServiceRunning() && hasNotificationPermission()) {
+        if (!VibrationMonitorService.isRunning && hasNotificationPermission()) {
             startService(Intent(this, VibrationMonitorService::class.java))
         }
     }
@@ -78,7 +82,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         // Bind to service if it's running
-        if(isServiceRunning()){
+        if(VibrationMonitorService.isRunning){
             Intent(this, VibrationMonitorService::class.java).also { intent ->
                 bindService(intent, connection, Context.BIND_AUTO_CREATE)
             }
@@ -103,14 +107,16 @@ class MainActivity : AppCompatActivity() {
         saveSettingsButton = findViewById(R.id.save_settings_button)
         pauseResumeButton = findViewById(R.id.pause_resume_button)
         manualStateToggleButton = findViewById(R.id.manual_state_toggle_button)
+        testWebhookButton = findViewById(R.id.test_webhook_button)
         webhookUrlsContainer = findViewById(R.id.webhook_urls_container)
         addWebhookButton = findViewById(R.id.add_webhook_button)
 
         // Load initial settings to populate fields
         loadSettingsToUI()
         // Set initial UI state
-        val isRunning = isServiceRunning()
+        val isRunning = VibrationMonitorService.isRunning
         manualStateToggleButton.isEnabled = isRunning
+        testWebhookButton.isEnabled = isRunning
         pauseResumeButton.isEnabled = isRunning
         pauseResumeButton.text = if (isRunning) "Pause/Resume" else "Service Not Running"
     }
@@ -128,6 +134,10 @@ class MainActivity : AppCompatActivity() {
 
         manualStateToggleButton.setOnClickListener {
             monitorService?.manualStateToggle()
+        }
+        
+        testWebhookButton.setOnClickListener {
+            monitorService?.sendTestWebhook()
         }
         
         addWebhookButton.setOnClickListener {
@@ -181,8 +191,18 @@ class MainActivity : AppCompatActivity() {
         // This function is no longer the primary driver of UI state.
         // It's kept for the onServiceDisconnected callback.
         manualStateToggleButton.isEnabled = isRunning
+        testWebhookButton.isEnabled = isRunning
         pauseResumeButton.isEnabled = isRunning
         pauseResumeButton.text = if (isRunning) "Pause/Resume" else "Service Disconnected"
+    }
+
+    private fun updateUiWithCurrentServiceState() {
+        monitorService?.let { service ->
+            statusTextView.text = service.currentStatus
+            lastRmsValue = service.currentRms
+            rmsTextView.text = String.format("RMS: %.3f g", service.currentRms)
+            pauseResumeButton.text = if (service.isCurrentlyPaused) "Resume Detection" else "Pause Detection"
+        }
     }
 
     // --- Permissions ---
@@ -225,16 +245,6 @@ class MainActivity : AppCompatActivity() {
         return true
     }
     
-    private fun isServiceRunning(): Boolean {
-        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
-            if (VibrationMonitorService::class.java.name == service.service.className) {
-                return true
-            }
-        }
-        return false
-    }
-
     private fun loadSettingsToUI() {
         val monitorName = sharedPreferences.getString("monitor_name", "dryer-1") ?: "dryer-1"
         val threshold = sharedPreferences.getFloat("threshold", 0.1f)
