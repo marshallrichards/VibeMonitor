@@ -50,7 +50,7 @@ class VibrationMonitorService : Service(), SensorEventListener {
 
     // Sensor Data
     private val accelerationSamples = mutableListOf<Float>()
-    private val sampleWindowSize = 250 // Corresponds to 5 seconds if sampling at 50Hz
+    private val sampleWindowSize = 75 // Corresponds to 1.5 seconds at 50Hz (SENSOR_DELAY_GAME)
     private val gravity = floatArrayOf(0f, 0f, 0f)
     private val alpha: Float = 0.8f
 
@@ -150,7 +150,7 @@ class VibrationMonitorService : Service(), SensorEventListener {
 
     private fun registerSensorListener() {
         accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
         }
     }
 
